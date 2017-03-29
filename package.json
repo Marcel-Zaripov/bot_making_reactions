@@ -4,8 +4,8 @@
   "main":"react_bot.js",
   "description": "Bot for performance evaluation",
   "dependencies": {
-    "mongodb": "2.2.25",
-    "botkit": "2.15.5"
+    "mongodb": "latest",
+    "botkit": "latest"
   }
 
 }
