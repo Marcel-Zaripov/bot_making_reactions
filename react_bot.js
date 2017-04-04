@@ -131,81 +131,94 @@ function startBot(db) {
             }
             // get the mentions of users in the message
             var users = extract_users(data.messages[0].text);
-            var updts = users.map(function (e) {
-                return {
-                    updateOne: {
-                        filter: { _id : e },
-                        update: { $inc : { score : default_score } },
-                        upsert: true
-                    }
-                };
-            });
-            collection.bulkWrite(updts, { w: 1 }, function (err, n_rec, status) {
-                collection.find({ '_id': { $in: users } }).toArray(function (err, docs) {
-                    controller.storage.channels.get(message.item.channel, function (err, ch) {
-                        // create list of "@user: score" elements
-                        // WARNING: Not sure if it will work in private channels
-                        var u_scores = ch.members.filter(function (e) {
-                            return users.includes(e.id);
-                        }).map(function (e) {
-                            var score = docs.filter(function (d) { return d._id === e.id; })[0].score;
-                            return "@" + e.name + ": `" + score + "`"; 
-                        });
-                        if (ch.praises[message.item.ts]) {
-                            // if channel is in storage and
-                            // the celebrating message was produced and saved earlier,
-                            // identified by its timestamp (ts)
-                            // we will just update that message
-                            ch.praise[message.item.ts].current_score += default_score;
-                            controller.storage.channels.save(ch, function (err) {
-                                var response = {};
-                                response.text = "`" + ch.praise[message.item.ts].current_score + "`" +
-                                                "scores! " + "Nice job! " + u_scores.join(", ");
-                                response.ts = ch.praise[message.item.ts].ts;
-                                response.channel = ch.id;
-                                bot.api.chat.update(response, function (err, json) {
-                                    if (err) {
-                                        throw err;
-                                    }
+            if (users.length) {
+                // if there are direct mentions we count scores
+                // otherwise do nothing
+                var updts = users.map(function (e) {
+                    return {
+                        updateOne: {
+                            filter: { _id : e },
+                            update: { $inc : { score : default_score } },
+                            upsert: true
+                        }
+                    };
+                });
+                collection.bulkWrite(updts, { w: 1 }, function (err, n_rec, status) {
+                    collection.find({ '_id': { $in: users } }).toArray(function (err, docs) {
+                        controller.storage.channels.get(message.item.channel, function (err, ch) {
+                            // create list of "@user: score" elements
+
+                            try {
+                                // WARNING: Not sure if it will work in private channels
+                                var u_scores = ch.members.filter(function (e) {
+                                    return users.includes(e.id);
+                                }).map(function (e) {
+                                    var score = docs.filter(function (d) { return d._id === e.id; })[0].score;
+                                    return "@" + e.name + ": `" + score + "`"; 
                                 });
-                            });
-                        }
-                        else {
-                            // no celebrating message yet, so create one and
-                            // save it to storage
-                            let response = "`" + default_score + "` " + "scores! " +
-                                           "Nice job! " + u_scores.join(", ");
+                            }
+                            catch(excp) {
+                                var u_scores = users.map(function (e) {
+                                    var score = docs.filter(function (d) { return d._id === e.id; })[0].score;
+                                    return "@" + e + ": `" + score + "`"; 
+                                });
+                            }
+                            if (ch && ch.praises[message.item.ts]) {
+                                // if channel is in storage and
+                                // the celebrating message was produced and saved earlier,
+                                // identified by its timestamp (ts)
+                                // we will just update that message
+                                ch.praise[message.item.ts].current_score += default_score;
+                                controller.storage.channels.save(ch, function (err) {
+                                    var response = {};
+                                    response.text = "`" + ch.praise[message.item.ts].current_score + "`" +
+                                                    "scores! " + "Nice job! " + u_scores.join(", ");
+                                    response.ts = ch.praise[message.item.ts].ts;
+                                    response.channel = ch.id;
+                                    bot.api.chat.update(response, function (err, json) {
+                                        if (err) {
+                                            throw err;
+                                        }
+                                    });
+                                });
+                            }
+                            else {
+                                // no celebrating message yet, so create one and
+                                // save it to storage
+                                let response = "`" + default_score + "` " + "scores! " +
+                                               "Nice job! " + u_scores.join(", ");
 
-                            // hack in the message because
-                            // add_reaction event message does not have channel property
-                            message.channel = message.item.channel;
-                            bot.reply(message, response, function (err, sent_message) {
+                                // hack in the message because
+                                // add_reaction event message does not have channel property
+                                message.channel = message.item.channel;
+                                bot.reply(message, response, function (err, sent_message) {
 
-                                if (Object.keys(ch.praises).length > 5) {
-                                    // if more than 5 records in the channel
-                                    // delete the praise for the earliest message
-                                    let smlst = Object.keys(ch.praise)
-                                                    .sort(function (a, b) {
-                                                        return parseFloat(a) - parseFloat(b);
-                                                    })[0];
-                                    delete ch.praise[smlst];
-                                }
-                                // we preserve this info in order to be able to update
-                                // this message later
-                                // the logic is as follows:
-                                // channel.praises.ts_of_msg_with_reacts maps to
-                                // this info below
-                                var msg_meta = {
-                                        ts: sent_message.ts,
-                                        current_score: default_score
-                                };
-                                ch.praises[message.item.ts] = msg_meta;
-                                controller.storage.channels.save(ch);
-                            });
-                        }
+                                    if (Object.keys(ch.praises).length > 5) {
+                                        // if more than 5 records in the channel
+                                        // delete the praise for the earliest message
+                                        let smlst = Object.keys(ch.praise)
+                                                        .sort(function (a, b) {
+                                                            return parseFloat(a) - parseFloat(b);
+                                                        })[0];
+                                        delete ch.praise[smlst];
+                                    }
+                                    // we preserve this info in order to be able to update
+                                    // this message later
+                                    // the logic is as follows:
+                                    // channel.praises.ts_of_msg_with_reacts maps to
+                                    // this info below
+                                    var msg_meta = {
+                                            ts: sent_message.ts,
+                                            current_score: default_score
+                                    };
+                                    ch.praises[message.item.ts] = msg_meta;
+                                    controller.storage.channels.save(ch);
+                                });
+                            }
+                        });
                     });
                 });
-            });
+            }
         });
     });
 }
