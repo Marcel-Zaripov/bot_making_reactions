@@ -11,13 +11,25 @@ function connectToDb() {
         if (err) {
             throw err;
         }
-        console.log('Connected to MongoDB');
+        console.log('***** Connected to MongoDB *****');
         startBot(db);
     });
 }
 
 
 function startBot(db) {
+
+
+    function extract_users(msg_text) {
+        var r = /<@\S+>/g;
+        var m = msg_text.match(r);
+        if (m) {
+            return m.map(function (e) { return e.slice(2, -1); });
+        } 
+        else {
+            return [];
+        }
+    }
 
     // single step of incrementing the score
     var default_score = 1;
@@ -34,8 +46,44 @@ function startBot(db) {
         }
     });
 
-    controller.hears(['hello', 'hi'], ['direct_message', 'direct_mention', 'mention'], function (bot, message) {
-        // customize in future
+    controller.on('bot_channel_join', function (bot, message) {
+        // it is a work-around for bot to preserve names of users
+        // that are in the channel he joined,
+        bot.api.channels.info(message.channel, function (err, channel) {
+            bot.api.users.list({ 'presence': false }, function (err, all_users) {
+                var channel_users = all_users.members.filter(function (e) {
+                    return channel.members.includes(e.id); 
+                }).map(function (e) { return {id: e.id, name: e.name }; });
+                controller.storage.channels.save({
+                    id: message.channel,
+                    members: channel_users
+                }, function (err) {
+                    bot.reply(message, "Hello, everybody! I will keep an eye on you:wink:");
+                });
+            });
+        });
+    });
+
+    controller.on('user_channel_join', function (bot, message) {
+        // make sure the user's name saved when he connects to
+        // the channel where the bot is presented
+        bot.api.users.info({user: message.user}, function (err, resp) {
+            controller.storage.channels.get(message.channel, function (err, channel) {
+                var user = {
+                    id: resp.user.id,
+                    name: resp.user.name
+                };
+                channel.members.push(user);
+                controller.storage.channels.save({channel}, function (err) {
+                    var text = "Hello, " + user.name + "! I am @reactionbot and I will keep the scores for reactions!";
+                    bot.reply(message, text);
+                });
+            });
+        });
+    });
+
+    controller.hears(['hello', 'hi', 'howdy'], ['direct_message', 'direct_mention', 'mention'], function (bot, message) {
+        // greet user, customize in future
         bot.reply(message, 'Hello! I will keep track of positive feedback for you!:wink:');
     });
 
@@ -69,29 +117,52 @@ function startBot(db) {
     });
 
     controller.on('reaction_added', function (bot, message) {
-
-        // only other users' reactions add to the score
-        if (message.user != message.item_user) {
-            collection.findAndModify(
-                {_id: message.item_user},
-                [['_id', 1]],
-                {$inc: {score: default_score}},
-                {new: true, upsert: true},
-                function (err, result) {
-                    controller.storage.users.get(message.user, function (err, user) {
-                        if (user && user.praise[message.item.ts]) {
-                            // if user exists in db and this message had reactions before
-                            // just update the message (NOTE: message is identified by ts)
-
-                            // change the score for current message and save it to store
-                            user.praise[message.item.ts].current_score += default_score;
-                            controller.storage.users.save(user, function (err) {
-                                let response = {};
-                                response.text = "`" + user.praise[message.item.ts].current_score + "` " +
-                                                "Nice job! @" + message.item_user +
-                                                " : `" + result.value.score + "`";
-                                response.ts = user.praise[message.item.ts].ts;
-                                response.channel = user.praise[message.item.ts].channel;
+        // find who is praised in the message first
+        var chl_query = {
+            channel: message.item.channel,
+            latest: message.item.ts,
+            count: 1,
+            inclusive: 1
+        };
+        // retrieve the message
+        bot.api.channels.history(chl_query, function (err, data) {
+            if (err) {
+                throw err;
+            }
+            // get the mentions of users in the message
+            var users = extract_users(data.messages[0].text);
+            var updts = users.map(function (e) {
+                return {
+                    updateOne: {
+                        filter: { _id : e },
+                        update: { $inc : { score : default_score } },
+                        upsert: true
+                    }
+                };
+            });
+            collection.bulkWrite(updts, { w: 1 }, function (err, n_rec, status) {
+                collection.find({ '_id': { $in: users } }).toArray(function (err, docs) {
+                    controller.storage.channels.get(message.item.channel, function (err, ch) {
+                        // create list of "@user: score" elements
+                        // WARNING: Not sure if it will work in private channels
+                        var u_scores = ch.members.filter(function (e) {
+                            return users.includes(e.id);
+                        }).map(function (e) {
+                            var score = docs.filter(function (d) { return d._id === e.id; })[0].score;
+                            return "@" + e.name + ": `" + score + "`"; 
+                        });
+                        if (ch.praises[message.item.ts]) {
+                            // if channel is in storage and
+                            // the celebrating message was produced and saved earlier,
+                            // identified by its timestamp (ts)
+                            // we will just update that message
+                            ch.praise[message.item.ts].current_score += default_score;
+                            controller.storage.channels.save(ch, function (err) {
+                                var response = {};
+                                response.text = "`" + ch.praise[message.item.ts].current_score + "`" +
+                                                "scores! " + "Nice job! " + u_scores.join(", ");
+                                response.ts = ch.praise[message.item.ts].ts;
+                                response.channel = ch.id;
                                 bot.api.chat.update(response, function (err, json) {
                                     if (err) {
                                         throw err;
@@ -100,50 +171,42 @@ function startBot(db) {
                             });
                         }
                         else {
-                            // this is the case user was not congratulated before
-                            let response = "`" + default_score + "` " +
-                                           "Nice job! @" + user.name +
-                                           " : `" + result.value.score + "`";
+                            // no celebrating message yet, so create one and
+                            // save it to storage
+                            let response = "`" + default_score + "` " + "scores! " +
+                                           "Nice job! " + u_scores.join(", ");
 
                             // hack in the message because
                             // add_reaction event message does not have channel property
                             message.channel = message.item.channel;
                             bot.reply(message, response, function (err, sent_message) {
-                                bot.api.users.info({user: message.item_user}, function (err, resp) {
 
-                                    // compile object first, based on the user object retrieved before
-                                    var data;
-                                    var msg_meta = {
-                                                    ts: sent_message.ts,
-                                                    channel: sent_message.channel,
-                                                    current_score: default_score
-                                                    };
-                                    if (user) {
-                                        data = user;
-                                        if (Object.keys(data.praise).length > 3) {
-
-                                            // if more than 3 records for a user
-                                            // delete the praise for the earliest message
-                                            let smlst = Object.keys(data.praise)
-                                                            .sort(function (a, b) {
-                                                                return parseFloat(a) - parseFloat(b);
-                                                            })[0];
-                                            delete data.praise[smlst];
-                                        }
-                                    }
-                                    else {
-                                        data.id = message.item_user;
-                                        data.name = resp.user.name;
-                                        data.praise = {};
-                                    }
-                                    data.praise[message.item.ts] = msg_meta;
-                                    controller.storage.users.save(data);
-                                });
+                                if (Object.keys(ch.praises).length > 5) {
+                                    // if more than 5 records in the channel
+                                    // delete the praise for the earliest message
+                                    let smlst = Object.keys(ch.praise)
+                                                    .sort(function (a, b) {
+                                                        return parseFloat(a) - parseFloat(b);
+                                                    })[0];
+                                    delete ch.praise[smlst];
+                                }
+                                // we preserve this info in order to be able to update
+                                // this message later
+                                // the logic is as follows:
+                                // channel.praises.ts_of_msg_with_reacts maps to
+                                // this info below
+                                var msg_meta = {
+                                        ts: sent_message.ts,
+                                        current_score: default_score
+                                };
+                                ch.praises[message.item.ts] = msg_meta;
+                                controller.storage.channels.save(ch);
                             });
                         }
                     });
                 });
-        }
+            });
+        });
     });
 }
 
