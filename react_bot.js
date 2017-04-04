@@ -73,27 +73,33 @@ function startBot(db) {
         }
     });
 
+    // utility function to save all users in channel
+    function save_users(bot, message) {
+        // it is a work-around for bot to preserve names of users
+        // that are in the channel he joined,
+        bot.api.channels.info({ channel: message.channel }, function (err, resp) {
+            bot.api.users.list({ presence: false }, function (err, all_users) {
+                var channel_users = all_users.members.filter(function (e) {
+                    return resp.channel.members.includes(e.id); 
+                }).map(function (e) { return {id: e.id, name: e.name }; });
+                controller.storage.channels.save({
+                    id: message.channel,
+                    members: channel_users,
+                    praises: {}
+                }, function (err) {
+                    bot.reply(message, "Hello, everybody! I will keep an eye on you:wink:");
+                });
+            });
+        });
+    }
+
     // handlers from here downwards
     controller.on('rtm_open', function (bot, message) {
         logger.info("Successfully connected!");
     });
 
     controller.on('bot_channel_join', function (bot, message) {
-        // it is a work-around for bot to preserve names of users
-        // that are in the channel he joined,
-        bot.api.channels.info(message.channel, function (err, channel) {
-            bot.api.users.list({ 'presence': false }, function (err, all_users) {
-                var channel_users = all_users.members.filter(function (e) {
-                    return channel.members.includes(e.id); 
-                }).map(function (e) { return {id: e.id, name: e.name }; });
-                controller.storage.channels.save({
-                    id: message.channel,
-                    members: channel_users
-                }, function (err) {
-                    bot.reply(message, "Hello, everybody! I will keep an eye on you:wink:");
-                });
-            });
-        });
+        save_users(bot, message);
     });
 
     controller.on('user_channel_join', function (bot, message) {
@@ -112,6 +118,12 @@ function startBot(db) {
                 });
             });
         });
+    });
+
+    // this is introduce in order to work around cases when bot is in channel already
+    // and did not collect users' info
+    controller.hears(['welcome'], ['direct_mention', 'mention'], function (bot, message) {
+        save_users(bot, message);
     });
 
     controller.hears(['hello', 'hi', 'howdy'], ['direct_message', 'direct_mention', 'mention'], function (bot, message) {
@@ -163,6 +175,7 @@ function startBot(db) {
             }
             // get the mentions of users in the message
             var users = extract_users(data.messages[0].text);
+            logger.info("Users mentioned in the message", users);
             if (users.length) {
                 // if there are direct mentions we count scores
                 // otherwise do nothing
@@ -179,33 +192,34 @@ function startBot(db) {
                     collection.find({ '_id': { $in: users } }).toArray(function (err, docs) {
                         controller.storage.channels.get(message.item.channel, function (err, ch) {
                             // create list of "@user: score" elements
-
+                            logger.info("Docs Fetched from mongo: ", docs);
                             try {
                                 // WARNING: Not sure if it will work in private channels
                                 var u_scores = ch.members.filter(function (e) {
                                     return users.includes(e.id);
                                 }).map(function (e) {
-                                    var score = docs.filter(function (d) { return d._id === e.id; })[0].score;
+                                    var score = docs.filter(function (d) { return d._id == e.id; })[0].score;
                                     return "@" + e.name + ": `" + score + "`"; 
                                 });
                             }
                             catch(excp) {
                                 var u_scores = users.map(function (e) {
-                                    var score = docs.filter(function (d) { return d._id === e.id; })[0].score;
+                                    var score = docs.filter(function (d) { return d._id == e; })[0].score;
                                     return "@" + e + ": `" + score + "`"; 
                                 });
                             }
-                            if (ch && ch.praises[message.item.ts]) {
+                            logger.info('Channel fetched from storage', ch);
+                            if (ch && ch.praises && ch.praises[message.item.ts]) {
                                 // if channel is in storage and
                                 // the celebrating message was produced and saved earlier,
                                 // identified by its timestamp (ts)
                                 // we will just update that message
-                                ch.praise[message.item.ts].current_score += default_score;
+                                ch.praises[message.item.ts].current_score += default_score;
                                 controller.storage.channels.save(ch, function (err) {
                                     var response = {};
-                                    response.text = "`" + ch.praise[message.item.ts].current_score + "`" +
+                                    response.text = "`" + ch.praises[message.item.ts].current_score + "`" +
                                                     "scores! " + "Nice job! " + u_scores.join(", ");
-                                    response.ts = ch.praise[message.item.ts].ts;
+                                    response.ts = ch.praises[message.item.ts].ts;
                                     response.channel = ch.id;
                                     bot.api.chat.update(response, function (err, json) {
                                         if (err) {
@@ -224,15 +238,15 @@ function startBot(db) {
                                 // add_reaction event message does not have channel property
                                 message.channel = message.item.channel;
                                 bot.reply(message, response, function (err, sent_message) {
-
-                                    if (Object.keys(ch.praises).length > 5) {
+                                    console.log(ch);
+                                    if (ch && ch.praises && Object.keys(ch.praises).length > 5) {
                                         // if more than 5 records in the channel
                                         // delete the praise for the earliest message
-                                        let smlst = Object.keys(ch.praise)
+                                        let smlst = Object.keys(ch.praises)
                                                         .sort(function (a, b) {
                                                             return parseFloat(a) - parseFloat(b);
                                                         })[0];
-                                        delete ch.praise[smlst];
+                                        delete ch.praises[smlst];
                                     }
                                     // we preserve this info in order to be able to update
                                     // this message later
@@ -243,6 +257,12 @@ function startBot(db) {
                                             ts: sent_message.ts,
                                             current_score: default_score
                                     };
+                                    // in case channel was not saved before
+                                    if (!ch) {
+                                        ch = {};
+                                        ch.id = message.item.channel;
+                                        ch.praises = {};
+                                    }
                                     ch.praises[message.item.ts] = msg_meta;
                                     controller.storage.channels.save(ch);
                                 });
