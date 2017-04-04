@@ -3,6 +3,7 @@
 
 var botkit = require('botkit');
 var mongodb = require('mongodb');
+var winston = require('winston');
 
 
 function connectToDb() {
@@ -31,11 +32,37 @@ function startBot(db) {
         }
     }
 
+    function logging_date() {
+        return new Date(Date.now()).toISOString();
+    }
+
+    // logging set up
+    var logger = new(winston.Logger)({
+        levels: winston.config.syslog.levels,
+        exitOnError: false,
+        transports: [
+            new(winston.transports.File)({
+                level: "warning",
+                filename: "./bot.log",
+                timestamp: logging_date
+            }),
+            new(winston.transports.Console)({
+                colorize: true,
+                timestamp: logging_date
+            })
+        ]
+    });
+
     // single step of incrementing the score
     var default_score = 1;
+
+    // connecting to collection
     var collection = db.collection('scores');
+
+    // bringing up the bot
     var controller = botkit.slackbot({
         debug: false,
+        logger: logger,
         json_file_store: 'json_storage'
     });
     controller.spawn({
@@ -44,6 +71,11 @@ function startBot(db) {
         if (err) {
             throw err;
         }
+    });
+
+    // handlers from here downwards
+    controller.on('rtm_open', function (bot, message) {
+        logger.info("Successfully connected!");
     });
 
     controller.on('bot_channel_join', function (bot, message) {

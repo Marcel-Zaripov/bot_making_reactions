@@ -1,2 +1,3 @@
 json_storage/
 node_modules/
+*.log

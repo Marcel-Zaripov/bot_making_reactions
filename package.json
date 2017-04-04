@@ -5,7 +5,8 @@
   "description": "Bot for performance evaluation",
   "dependencies": {
     "mongodb": "latest",
-    "botkit": "latest"
+    "botkit": "latest",
+    "winston": "latest"
   }
 
 }
