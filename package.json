@@ -7,6 +7,12 @@
     "mongodb": "latest",
     "botkit": "latest",
     "winston": "latest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://bitbucket.org/activewizards/reactionbot"
+  },
+  "scripts": {
+    "start": "node react_bot.js"
   }
-
 }

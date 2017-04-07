@@ -1,6 +1,6 @@
 'use strict';
 
-
+var fs = require('fs');
 var botkit = require('botkit');
 var mongodb = require('mongodb');
 var winston = require('winston');
@@ -55,6 +55,12 @@ function startBot(db) {
     // single step of incrementing the score
     var default_score = 1;
 
+    // stopwords for counting congrats
+    // ATTENTION: this is synchronous
+    // if json is too big may take time!
+    var kewords_file = './keywords.json';
+    var keywords = JSON.parse(fs.readFileSync(kewords_file, 'utf8'));
+
     // connecting to collection
     var collection = db.collection('scores');
 
@@ -72,6 +78,12 @@ function startBot(db) {
         }
     });
 
+    function match_keywords(keywords, message) {
+        return keywords.some(function (item) {
+            return (new RegExp(item).test(message));
+        });
+    }
+
     // utility function to save all users in channel
     function save_users(bot, message) {
         // it is a work-around for bot to preserve names of users
@@ -88,6 +100,7 @@ function startBot(db) {
             // it is dm, though it should not happen, but still we do nothing but answer
             bot.reply(message, "Hello! I will keep an eye on you:wink:");
         }
+
         function get_users(err_ch, resp) {
             bot.api.users.list({ presence: false }, function (err_u, all_users) {
                 var channel_users = all_users.members.filter(function (e) {
@@ -144,7 +157,7 @@ function startBot(db) {
         get_user_info(bot, message);
     });
 
-    // this is introduce in order to work around cases when bot is in channel already
+    // this is introduced in order to work around cases when bot is in channel already
     // and did not collect users' info
     controller.hears(['welcome'], ['direct_mention', 'mention'], function (bot, message) {
         save_users(bot, message);
@@ -184,8 +197,22 @@ function startBot(db) {
         });
     });
 
+    // reaction collection
+    controller.hears(keywords, ['ambient'], function (bot, message) {
+        bot.api.reactions.add({
+            timestamp: message.ts,
+            channel: message.channel,
+            name: 'clap',
+        }, function(err, res) {
+            if (err) {
+                console.log('Failed to add emoji reaction :(', err);
+            }
+        });
+    });
+
     controller.on('reaction_added', function (bot, message) {
         // find who is praised in the message first
+        console.log(message);
         var chl_query = {
             channel: message.item.channel,
             latest: message.item.ts,
@@ -193,14 +220,31 @@ function startBot(db) {
             inclusive: 1
         };
         // retrieve the message
-        bot.api.channels.history(chl_query, function (err, data) {
+        if (message.item.channel[0] == 'C') {
+            bot.api.channels.history(chl_query, function (err, data) {
+                console.log(data);
+                process_reacts(err, data);
+            });
+        }
+        else if (message.item.channel[0] == 'G') {
+            console.log('calling api.groups');
+            bot.api.groups.history(chl_query, function (err, data) {
+                console.log(data);
+                process_reacts(err, data);
+            });
+        }
+
+        function process_reacts(err, data) {
             if (err) {
                 throw err;
             }
+            var text = data.messages.length ? data.messages[0].text : "";
+            
             // get the mentions of users in the message
-            var users = extract_users(data.messages[0].text);
+            var users = extract_users(text);
             logger.info("Users mentioned in the message", users);
-            if (users.length) {
+            console.log(match_keywords(keywords, text));
+            if (users.length && match_keywords(keywords, text)) {
                 // if there are direct mentions we count scores
                 // otherwise do nothing
                 var updts = users.map(function (e) {
@@ -294,7 +338,7 @@ function startBot(db) {
                     });
                 });
             }
-        });
+        }
     });
 }
 
