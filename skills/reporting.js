@@ -8,7 +8,7 @@ module.exports = function (controller) {
             // first get the slack name of the user
             var { name: user_name } = response.user;
             bot.startConversation(message, function (err, convo) {
-                collection.findOne({_id: message.user}, function (db_err, result) {
+                controller.collection.findOne({_id: message.user}, function (db_err, result) {
                     if (db_err) {
                         let response = "Sorry, @" + user_name +
                                        "! Could not reach the database this time.:disappointed:";
