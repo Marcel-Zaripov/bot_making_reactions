@@ -6,7 +6,8 @@
   "dependencies": {
     "mongodb": "latest",
     "botkit": "latest",
-    "winston": "latest"
+    "winston": "latest",
+    "node-env-file": "latest"
   },
   "repository": {
     "type": "git",
