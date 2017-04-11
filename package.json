@@ -7,7 +7,8 @@
     "mongodb": "latest",
     "botkit": "latest",
     "winston": "latest",
-    "node-env-file": "latest"
+    "node-env-file": "latest",
+    "giphy-api": "latest"
   },
   "repository": {
     "type": "git",

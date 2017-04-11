@@ -109,8 +109,11 @@ module.exports = function (controller) {
                                 ch.praises[message.item.ts].current_score += controller.default_score;
                                 controller.storage.channels.save(ch, function (err) {
                                     var response = {};
-                                    response.text = "`" + ch.praises[message.item.ts].current_score + "`" +
-                                                    "scores! " + "Nice job! " + u_scores.join(", ");
+                                    var score = "`" + ch.praises[message.item.ts].current_score + "`";
+                                    response.text = ch.praises[message.item.ts]
+                                                                .text
+                                                                .replace(/`\d+`/, score)
+                                                                .replace(/@.+`/, u_scores);
                                     response.ts = ch.praises[message.item.ts].ts;
                                     response.channel = ch.id;
                                     bot.api.chat.update(response, function (err, json) {
@@ -123,39 +126,47 @@ module.exports = function (controller) {
                             else {
                                 // no celebrating message yet, so create one and
                                 // save it to storage
-                                let response = "`" + controller.default_score + "` " + "scores! " +
-                                               "Nice job! " + u_scores.join(", ");
-
-                                // hack in the message because
-                                // add_reaction event message does not have channel property
-                                message.channel = message.item.channel;
-                                bot.reply(message, response, function (err, sent_message) {
-                                    if (ch && ch.praises && Object.keys(ch.praises).length > 5) {
-                                        // if more than 5 records in the channel
-                                        // delete the praise for the earliest message
-                                        let smlst = Object.keys(ch.praises)
-                                                        .sort(function (a, b) {
-                                                            return parseFloat(a) - parseFloat(b);
-                                                        })[0];
-                                        delete ch.praises[smlst];
-                                    }
-                                    // we preserve this info in order to be able to update
-                                    // this message later
-                                    // the logic is as follows:
-                                    // channel.praises.ts_of_msg_with_reacts maps to
-                                    // this info below
-                                    var msg_meta = {
-                                            ts: sent_message.ts,
-                                            current_score: controller.default_score
-                                    };
-                                    // in case channel was not saved before
-                                    if (!ch) {
-                                        ch = {};
-                                        ch.id = message.item.channel;
-                                        ch.praises = {};
-                                    }
-                                    ch.praises[message.item.ts] = msg_meta;
-                                    controller.storage.channels.save(ch);
+                                controller.giphy.random({
+                                    tag: controller.gif_tags[Math.floor(Math.random() * controller.gif_tags.length)],
+                                    fmt: 'json'
+                                }, function (err, gif) {
+                                    console.log(gif.data.url);
+                                
+                                    let response = "`" + controller.default_score + "` " + "scores! " +
+                                                   "Nice job! " + u_scores.join(", ") + "\n" +
+                                                   gif.data.url;
+                                    // hack in the message because
+                                    // add_reaction event message does not have channel property
+                                    message.channel = message.item.channel;
+                                    bot.reply(message, response, function (err, sent_message) {
+                                        if (ch && ch.praises && Object.keys(ch.praises).length > 5) {
+                                            // if more than 5 records in the channel
+                                            // delete the praise for the earliest message
+                                            let smlst = Object.keys(ch.praises)
+                                                            .sort(function (a, b) {
+                                                                return parseFloat(a) - parseFloat(b);
+                                                            })[0];
+                                            delete ch.praises[smlst];
+                                        }
+                                        // we preserve this info in order to be able to update
+                                        // this message later
+                                        // the logic is as follows:
+                                        // channel.praises.ts_of_msg_with_reacts maps to
+                                        // this info below
+                                        var msg_meta = {
+                                                ts: sent_message.ts,
+                                                current_score: controller.default_score,
+                                                text: response
+                                        };
+                                        // in case channel was not saved before
+                                        if (!ch) {
+                                            ch = {};
+                                            ch.id = message.item.channel;
+                                            ch.praises = {};
+                                        }
+                                        ch.praises[message.item.ts] = msg_meta;
+                                        controller.storage.channels.save(ch);
+                                    });
                                 });
                             }
                         });

@@ -56,6 +56,12 @@ function startBot(db) {
         }
     });
 
+    // using giphy-api for gif fetching
+    var giphy_options = process.env.giphy_api_key ?
+                        {apiKey: process.env.giphy_api_key} :
+                        {}
+    controller.giphy = require("giphy-api")(giphy_options);
+
     // connecting to collection
     controller.collection = db.collection('scores');
 
@@ -63,10 +69,13 @@ function startBot(db) {
     controller.default_score = 1;
 
     // stopwords for counting congrats
+    // tags for gifs
     // ATTENTION: this is synchronous
     // if json is too big may take time!
-    var kewords_file = path.join(__dirname, './keywords.json');
-    controller.react_keywords = JSON.parse(fs.readFileSync(kewords_file, 'utf8'));
+    var kewords_file = path.join(__dirname, './keywords_tags.json');
+    var keywords_tags = JSON.parse(fs.readFileSync(kewords_file, 'utf8'));
+    controller.react_keywords = keywords_tags.keywords;
+    controller.gif_tags = keywords_tags.tags;
 
     // activate skills from ./skills directory
     var skills_dir = path.join(__dirname, "skills");
