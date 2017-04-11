@@ -64,21 +64,30 @@ module.exports = function (controller) {
             if (users.length && match_keywords(controller.react_keywords, text)) {
                 // if there are direct mentions we count scores
                 // otherwise do nothing
-                var updts = users.map(function (e) {
-                    return {
-                        updateOne: {
-                            filter: { _id : e },
-                            update: { $inc : { score : controller.default_score } },
-                            upsert: true
-                        }
-                    };
-                });
-                controller.collection.bulkWrite(updts, { w: 1 }, function (err, n_rec, status) {
-                    controller.collection.find({ '_id': { $in: users } }).toArray(function (err, docs) {
-                        controller.storage.channels.get(message.item.channel, function (err, ch) {
+                controller.storage.channels.get(message.item.channel, function (err, ch) {
+                    var updts = users.map(function (e) {
+                        // be careful, the channel should be saved with its members
+                        // it is handle in boarding, when bot joins channel it will save
+                        // all the info it needs, if bot was in the channel, it is important
+                        // to introduce it so it can store info, refernce boarding.js
+                        var usr = ch && ch.members ?
+                                  ch.members.find(function(o) { return o.id === e; }) :
+                                  { name: "unknown" };
+                        return {
+                            updateOne: {
+                                filter: { _id : e },
+                                update: {
+                                    $inc : { score : controller.default_score },
+                                    $setOnInsert: { name : usr.name }
+                                },
+                                upsert: true
+                            }
+                        };
+                    });
+                    controller.collection.bulkWrite(updts, { w: 1 }, function (err, n_rec, status) {
+                        controller.collection.find({ '_id': { $in: users } }).toArray(function (err, docs) {
                             // create list of "@user: score" elements
                             try {
-                                // WARNING: Not sure if it will work in private channels
                                 var u_scores = ch.members.filter(function (e) {
                                     return users.includes(e.id);
                                 }).map(function (e) {
