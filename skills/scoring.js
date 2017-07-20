@@ -3,7 +3,31 @@
 // maybe will be changed in future
 
 module.exports = function (controller) {
-    controller.log("Loaded scoring skills");
+    // help docs
+    var scoring_keywords = controller.react_keywords;
+    var description = `
+        The main functionality of bot is concluded in this skill. 
+        Score collection works this way: 
+        user sends a message with one of keywords: 
+        ${scoring_keywords} 
+        and mention of one or several users in the form: 
+        “Cheers @<username>” or “thnx to @<username> for ….” 
+        (case insensitive, only keywords and mentions matter) 
+        and bot will add reaction to this message 
+        (for now reaction is hard-coded, maybe changed in the future). 
+        When reaction is added to the message of the aforementioned formula, 
+        the bot replies with the message of praising in the form: 
+        “\`n\` scores! Nice Job! @<username>: \`total_user_score\`!” + random gif. 
+        As other users add their reactions, 
+        bot simply updates the praising message posted before.
+    `;
+    var help = {
+        name: "boarding",
+        description: description,
+        short: "main functionality of this bot - gather scores on reactions!",
+        commands: []
+    };
+    controller.help.push(help);
     function match_keywords(keywords, message) {
         return keywords.some(function (item) {
             return (new RegExp(item).test(message));

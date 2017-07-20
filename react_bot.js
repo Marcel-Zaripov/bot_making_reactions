@@ -77,10 +77,38 @@ function startBot(db) {
     controller.react_keywords = keywords_tags.keywords;
     controller.gif_tags = keywords_tags.tags;
 
+    // for now help docs will live here
+    // may restructure it to be contain in json files
+    // help object schema:
+    // {
+    //     name: "name of the skill",
+    //     description: "some description of the skill",
+    //     short: "short description of skill",
+    //     commands: [
+    //         {
+    //             name: "name",
+    //             triggers: "name that triggers command in bot message",
+    //             description: [
+    //                 "what this command does",
+    //                 "split by lines to be sent each individually"
+    //             ],
+    //             short: "short description of command",
+    //             works_for: ['direct_mention', 'mention', 'ambient', 'direct_message']
+    //         }
+    //     ]
+    // }
+    controller.help = [];
+    controller.general_help = [
+        "I will be glad to help you discover my functionality!",
+        "To get the list of my skills, i.e. what I can do, say `@reaction_bot help skills` or send `help skills` in direct message.",
+        "To get the list of active commands, say `@reaction_bot help commands` or send `help commands` in direct message.",
+        "Finally, you can get some detailed info on each of the command or skill with either `help skill <skill_name>` or `help command <command_name>`"
+    ];
     // activate skills from ./skills directory
     var skills_dir = path.join(__dirname, "skills");
     fs.readdirSync(skills_dir).forEach(function (file) {
         require("./skills/" + file)(controller);
+        controller.log("Loaded " + file.split(".")[0] + " skills");
     });
 }
 

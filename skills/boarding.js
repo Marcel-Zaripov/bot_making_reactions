@@ -1,10 +1,46 @@
 // this set of skills is responsible for bots recognizing users
 
 module.exports = function (controller) {
-    controller.log("Loaded boarding skills");
+    // help docs
+    var description = `
+        The set of functions that ensures 
+        that bot is acquainted with channel users 
+        (i.e. their names and ids are saved to bot’s storage) 
+        in order to avoid querying slack api every time the 
+        score is updated in the praise message. 
+        The corner case is if either the bot was in the channel 
+        before being deployed / while being offline, 
+        or a new user connected to the channel 
+        while the bot was offline. 
+        To cover this up the function of “welcoming” is introduced, 
+        which works this way: send “welcome” + either direct 
+        or indirect mention of bot user, 
+        e.g. “welcome @reactionbot” or “@reactionbot welcome”.
+        (punctuation or any other words do not matter, 
+        what triggers it is keyword welcome and mention of bot user)
+    `;
+    var help = {
+        name: "boarding",
+        description: description,
+        short: "Introduce all users of channel to the bot.",
+        commands: [
+            {
+                name: "`welcome`",
+                triggers: "`welcome`",
+                description: [
+                    "Run `reaction_bot welcome` or `welcome reaction_bot` to introduce the bot in the channel.",
+                    "This command only needs to be run in the channel if the bot joined the channel or if a new user joined while bot is offline.",
+                    "Command is only run in either private or public channel, where the bot is presented."
+                ],
+                short: "gather information about users in current channel",
+                works_for: "'direct_mention', 'mention'"
+            }
+        ]
+    };
+    controller.help.push(help);
     function save_users(bot, message) {
         // it is a work-around for bot to preserve names of users
-        // that are in the channel he joined,
+        // that are in the channel he joined
         if (message.channel && message.channel[0] == 'C') {
             // if it is open channel - retrieve via channels api
             bot.api.channels.info({ channel: message.channel }, get_users);
