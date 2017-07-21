@@ -1,49 +1,43 @@
 // collect and save scores to mongodb
 // response are still hardcoded and always static
 // maybe will be changed in future
+// help docs
+
+var description = `
+The main functionality of bot is concluded in this skill. Score collection works this way: user sends a message with one of keywords: 
+["cheers", "claps", "kudos", "props", "shoutout", ...] and mention of one or several users in the form: “Cheers @<username>” or “thnx to @<username> for ….” 
+(case insensitive, only keywords and mentions matter) and bot will add reaction to this message (for now reaction is hard-coded, maybe changed in the future). 
+When reaction is added to the message of the aforementioned formula, the bot replies with the message of praising in the form: “\`n\` scores! Nice Job! @<username>: \`total_user_score\`!” + random gif. 
+As other users add their reactions, bot simply updates the praising message posted before.
+`;
+var help = {
+    name: "scoring",
+    description: description,
+    short: "main functionality of this bot - gather scores on reactions!",
+    commands: []
+};
+
+
+function match_keywords(keywords, message) {
+    return keywords.some(function (item) {
+        return (new RegExp(item).test(message));
+    });
+}
+
+function extract_users(msg_text) {
+    var r = /<@\S+>/g;
+    var m = msg_text.match(r);
+    if (m) {
+        return m.map(function (e) { return e.slice(2, -1); });
+    } 
+    else {
+        return [];
+    }
+}
 
 module.exports = function (controller) {
-    // help docs
-    var scoring_keywords = controller.react_keywords;
-    var description = `
-        The main functionality of bot is concluded in this skill. 
-        Score collection works this way: 
-        user sends a message with one of keywords: 
-        ${scoring_keywords} 
-        and mention of one or several users in the form: 
-        “Cheers @<username>” or “thnx to @<username> for ….” 
-        (case insensitive, only keywords and mentions matter) 
-        and bot will add reaction to this message 
-        (for now reaction is hard-coded, maybe changed in the future). 
-        When reaction is added to the message of the aforementioned formula, 
-        the bot replies with the message of praising in the form: 
-        “\`n\` scores! Nice Job! @<username>: \`total_user_score\`!” + random gif. 
-        As other users add their reactions, 
-        bot simply updates the praising message posted before.
-    `;
-    var help = {
-        name: "scoring",
-        description: description,
-        short: "main functionality of this bot - gather scores on reactions!",
-        commands: []
-    };
-    controller.help.push(help);
-    function match_keywords(keywords, message) {
-        return keywords.some(function (item) {
-            return (new RegExp(item).test(message));
-        });
-    }
 
-    function extract_users(msg_text) {
-        var r = /<@\S+>/g;
-        var m = msg_text.match(r);
-        if (m) {
-            return m.map(function (e) { return e.slice(2, -1); });
-        } 
-        else {
-            return [];
-        }
-    }
+    controller.help.push(help);
 
     controller.hears(controller.react_keywords, ['ambient'], function (bot, message) {
         bot.api.reactions.add({
