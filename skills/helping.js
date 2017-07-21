@@ -45,6 +45,19 @@ module.exports = function (controller) {
             convo.say(resp);
         }
     }
+
+    function matchStr(str, pattern) {
+        return new RegExp(pattern).test(str);
+    }
+
+    function composeMsg(objects, compose_fn) {
+        var result = [];
+        objects.forEach(function(doc) {
+            result.push(compose_fn(doc));
+        });
+        return result;
+    }
+
     controller.hears(['help'], ['direct_message', 'direct_mention', 'mention'], function (bot, message) {
         bot.startConversation(message, function (err, convo) {
         // first check if there is arguments after help
@@ -52,10 +65,30 @@ module.exports = function (controller) {
             switch (args.length) {
                 case 0:
                     // general help
-                    sendHelp(convo, controller.general_help)
+                    sendHelp(convo, controller.general_help);
                     break;
                 case 1:
                     // help on skills and commands in general
+                    if (matchStr(args[0], "skills")) {
+                        var resp = ["Here is the list of my skills: "];
+                        resp.push(...composeMsg(controller.help, function(doc) {
+                            var commands = doc.commands.map(function(cmd) { return cmd.name; });
+                            return `*${doc.name}* --- ${doc.short}\n${commands.length > 0 ? ">Available commands: " + commands : ""}`;
+                        }));
+                        resp.push("Get information on each skill with `help skill <skill_name>`!");
+                        sendHelp(convo, resp);
+                    }
+                    if (matchStr(args[0], "commands")) {
+                        var resp = ["Here are all of the commands I understand: "];
+                        resp.push(...composeMsg(controller.help, function(doc) {
+                            var cmds = doc.commands.map(function(cmd) {
+                                return `*Command name:* ${cmd.name} --- ${cmd.short}`;
+                            });
+                            return cmds.join("\n");
+                        }));
+                        resp.push("Get information on each command with `help command <command_name>`!");
+                        sendHelp(convo, resp);
+                    }
                     break;
                 case 2:
                     // help on individual commands and skills

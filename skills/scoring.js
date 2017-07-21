@@ -22,7 +22,7 @@ module.exports = function (controller) {
         bot simply updates the praising message posted before.
     `;
     var help = {
-        name: "boarding",
+        name: "scoring",
         description: description,
         short: "main functionality of this bot - gather scores on reactions!",
         commands: []
